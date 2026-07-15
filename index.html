@@ -117,6 +117,11 @@
     width:100%; font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--gold);
     min-height:16px; padding-bottom:4px;
   }
+  .duplicate-warning{
+    font-family:'Inter',sans-serif; font-size:12px; border-radius:6px; padding:8px 12px; margin:6px 0 0;
+  }
+  .duplicate-warning.dup-exact{ background:var(--danger-bg); color:var(--danger); border:1px solid var(--danger); }
+  .duplicate-warning.dup-similar{ background:#FBF1D9; color:#8A6A1F; border:1px solid var(--gold); }
   .status{ font-family:'IBM Plex Mono',monospace; font-size:11px; color:var(--gold); min-height:16px; margin:10px 0; letter-spacing:0.3px; }
   .lines{ list-style:none; margin:0; padding:0; }
   .group-title{
@@ -346,6 +351,7 @@
         <button id="addBtn">Qo'shish</button>
         <div class="preview-line" id="previewLine"></div>
       </div>
+      <div class="duplicate-warning" id="duplicateWarning" style="display:none;"></div>
       <div class="status" id="status"></div>
       <div class="search-row">
         <span class="search-icon">🔍</span>
@@ -452,6 +458,36 @@ function matchesSearch(name, query){
   return tokens.every(t => n.includes(t));
 }
 
+function findDuplicates(name){
+  const norm = normalizeSearch(name);
+  let exact = null;
+  const similar = [];
+  if(!norm) return { exact, similar };
+  products.forEach(p => {
+    const pn = normalizeSearch(p.name);
+    if(pn === norm){ exact = p; }
+    else if(matchesSearch(p.name, name)){ similar.push(p); }
+  });
+  return { exact, similar };
+}
+
+function updateDuplicateWarning(){
+  const name = inputEl.value.trim();
+  if(!name){ duplicateWarningEl.style.display = 'none'; return; }
+  const { exact, similar } = findDuplicates(name);
+  if(exact){
+    duplicateWarningEl.className = 'duplicate-warning dup-exact';
+    duplicateWarningEl.innerHTML = '⚠️ Bunday tovar allaqachon bor: <b>' + exact.name + '</b> (qoldiq: ' + exact.stock + ' ' + unitNounFor(exact.unit) + ')';
+    duplicateWarningEl.style.display = 'block';
+  } else if(similar.length){
+    duplicateWarningEl.className = 'duplicate-warning dup-similar';
+    duplicateWarningEl.innerHTML = '💡 O\'xshash tovarlar bor: ' + similar.slice(0,3).map(p => p.name).join(', ');
+    duplicateWarningEl.style.display = 'block';
+  } else {
+    duplicateWarningEl.style.display = 'none';
+  }
+}
+
 let products = [];
 let buyPlan = {};
 let activeFilter = "Barchasi";
@@ -463,6 +499,7 @@ let revisionChanges = [];
 const listEl = document.getElementById('list');
 const tabsEl = document.getElementById('tabs');
 const inputEl = document.getElementById('productInput');
+const duplicateWarningEl = document.getElementById('duplicateWarning');
 const unitEl = document.getElementById('unitInput');
 const categoryEl = document.getElementById('categoryInput');
 const pcsField = document.getElementById('pcsField');
@@ -898,6 +935,13 @@ function classifyProduct(name){
 async function addProduct(){
   const name = inputEl.value.trim();
   if(!name) return;
+
+  const { exact } = findDuplicates(name);
+  if(exact){
+    const ok = confirm('"' + exact.name + '" nomli tovar allaqachon ro\'yxatda bor (qoldiq: ' + exact.stock + ' ' + unitNounFor(exact.unit) + ').\n\nYangi qator sifatida baribir qo\'shilsinmi?\n\n(Bekor qilib, o\'sha tovarning qoldig\'ini yangilashingiz mumkin)');
+    if(!ok) return;
+  }
+
   const unit = unitEl.value;
   const piecesPerBlock = hasDivisor(unit) ? (parseFloat(pcsEl.value) || 1) : 1;
   const buyPrice = parseFloat(buyPriceEl.value) || 0;
@@ -916,6 +960,7 @@ async function addProduct(){
   inputEl.value = ""; pcsEl.value = ""; buyPriceEl.value = ""; sellPriceEl.value = ""; stockEl.value = "";
   previewLine.textContent = "";
   categoryEl.value = "__auto__";
+  duplicateWarningEl.style.display = 'none';
 
   const item = { id: Date.now() + "-" + Math.random().toString(36).slice(2,7), name, category, unit, piecesPerBlock, buyPrice, sellPrice, stock };
   products.unshift(item);
@@ -928,6 +973,7 @@ async function addProduct(){
 }
 addBtn.onclick = addProduct;
 inputEl.addEventListener('keydown', e => { if(e.key === 'Enter') addProduct(); });
+inputEl.addEventListener('input', updateDuplicateWarning);
 
 /* ---------- Price / unit edit modal ---------- */
 function openPriceEdit(p){
